@@ -6,6 +6,7 @@ vocab_sizes:
 normalization: nfkc
 character_coverage: 0.997
 byte_fallback: true
+corpus_tag: 5b
 user_defined_symbols:
   - "<pad>"
   - "<bos>"

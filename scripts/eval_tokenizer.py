@@ -46,6 +46,24 @@ def load_models(models: List[str], models_dir: str | None) -> List[Path]:
     return result
 
 
+def resolve_model_key(model_path: Path) -> str:
+    model_key = model_path.stem
+    meta_path = model_path.with_suffix(".json")
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            corpus_tag = meta.get("corpus_tag")
+            vocab_size = meta.get("vocab_size")
+            source_repo = meta.get("source_repo")
+            if corpus_tag and vocab_size:
+                return f"nep-tokenizer-{corpus_tag}-{int(vocab_size)}"
+            if source_repo == "himalaya-ai/nepali-tokenizer-corpus" and vocab_size:
+                return f"nep-tokenizer-5b-{int(vocab_size)}"
+        except Exception:
+            pass
+    return model_key
+
+
 def eval_file(sp: spm.SentencePieceProcessor, path: Path) -> Dict[str, Any]:
     total_tokens = 0
     total_words = 0
@@ -116,7 +134,7 @@ def main() -> None:
     for model_path in model_paths:
         sp = spm.SentencePieceProcessor()
         sp.load(str(model_path))
-        model_key = model_path.stem
+        model_key = resolve_model_key(model_path)
         results[model_key] = {}
 
         for lang, path in eval_files.items():

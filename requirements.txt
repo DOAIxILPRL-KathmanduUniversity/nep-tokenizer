@@ -5,3 +5,5 @@ huggingface_hub
 pyyaml
 tqdm
 tiktoken
+zstandard
+transformers

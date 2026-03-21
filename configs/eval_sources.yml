@@ -40,12 +40,14 @@ languages:
         type: hf
         split: train
         field: text
-  - lang: roman
+  - lang: roman_ne
     sources:
       - id: himalaya-ai/nepali-roman-pretrain
         type: hf
         split: train
         field: text
+  - lang: roman_hi
+    sources:
       - id: ai4bharat/sangraha
         type: hf
         config: synthetic

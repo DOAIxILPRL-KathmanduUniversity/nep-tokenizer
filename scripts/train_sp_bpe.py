@@ -187,6 +187,7 @@ def main() -> None:
     character_coverage = float(cfg.get("character_coverage", 0.9995))
     byte_fallback = bool(cfg.get("byte_fallback", True))
     user_defined_symbols = cfg.get("user_defined_symbols") or []
+    corpus_tag = cfg.get("corpus_tag")
     if args.disable_user_defined_symbols:
         user_defined_symbols = []
     elif args.user_defined_symbols is not None:
@@ -247,6 +248,8 @@ def main() -> None:
             "seed": args.seed,
             "config_hash": cfg_hash,
         }
+        if corpus_tag:
+            meta["corpus_tag"] = corpus_tag
         meta_path = Path(f"{model_prefix}.json")
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info("Saved model + metadata: %s", model_prefix)
