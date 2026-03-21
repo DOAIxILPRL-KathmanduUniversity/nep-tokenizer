@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterator, Optional
 
 import yaml
 from datasets import load_dataset
+from huggingface_hub import HfApi, get_token, login
 
 try:
     import sentencepiece as spm
@@ -81,6 +82,48 @@ def config_hash(cfg: Dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def ensure_repo(api: HfApi, repo_id: str, repo_type: str, token: str) -> None:
+    try:
+        api.repo_info(repo_id=repo_id, repo_type=repo_type, token=token)
+    except Exception:
+        api.create_repo(repo_id=repo_id, repo_type=repo_type, exist_ok=True, token=token)
+
+
+def upload_model_artifacts(
+    repo_id: str,
+    repo_type: str,
+    model_prefix: Path,
+    commit_message: str,
+    subdir: Optional[str] = None,
+) -> None:
+    token = get_token() or os.getenv("HF_TOKEN")
+    if not token:
+        login()
+        token = get_token()
+    api = HfApi()
+    ensure_repo(api, repo_id, repo_type, token)
+
+    files = [
+        model_prefix.with_suffix(".model"),
+        model_prefix.with_suffix(".vocab"),
+        model_prefix.with_suffix(".json"),
+    ]
+    for path in files:
+        if not path.exists():
+            logger.warning("Skipping missing artifact: %s", path)
+            continue
+        name = path.name
+        path_in_repo = f"{subdir.rstrip('/')}/{name}" if subdir else name
+        api.upload_file(
+            path_or_fileobj=str(path),
+            path_in_repo=path_in_repo,
+            repo_id=repo_id,
+            repo_type=repo_type,
+            token=token,
+            commit_message=commit_message,
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train SentencePiece BPE tokenizers")
     parser.add_argument("--source-repo", required=True)
@@ -92,19 +135,67 @@ def main() -> None:
         default="configs/train_config.yml",
         help="YAML config with vocab sizes and SP options",
     )
+    parser.add_argument(
+        "--vocab-sizes",
+        help="Comma-separated list of vocab sizes to override config (e.g. 64000,100000)",
+    )
     parser.add_argument("--output-dir", default="data/tokenizers")
     parser.add_argument("--max-samples", type=int)
     parser.add_argument("--shuffle-buffer", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--user-defined-symbols",
+        help=(
+            "Comma-separated list of user defined symbols to override config. "
+            "Use empty string to disable."
+        ),
+    )
+    parser.add_argument(
+        "--disable-user-defined-symbols",
+        action="store_true",
+        help="Ignore user_defined_symbols from config (and any CLI override).",
+    )
+    parser.add_argument(
+        "--upload-repo",
+        help="HF repo_id to upload tokenizer artifacts after each vocab size",
+    )
+    parser.add_argument(
+        "--upload-repo-type",
+        default="model",
+        choices=["model", "dataset", "space"],
+        help="HF repo type for uploads (default: model)",
+    )
+    parser.add_argument(
+        "--upload-subdir",
+        default="",
+        help="Optional subdirectory inside the repo to place artifacts",
+    )
+    parser.add_argument(
+        "--upload-commit-message",
+        default="Add SentencePiece tokenizer artifacts",
+        help="Commit message for HF uploads",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.train_config)
-    vocab_sizes = cfg.get("vocab_sizes", [64000])
+    if args.vocab_sizes:
+        vocab_sizes = [int(v.strip()) for v in args.vocab_sizes.split(",") if v.strip()]
+    else:
+        vocab_sizes = cfg.get("vocab_sizes", [64000])
     model_type = cfg.get("model_type", "bpe")
     normalization = cfg.get("normalization", "nfkc")
     character_coverage = float(cfg.get("character_coverage", 0.9995))
     byte_fallback = bool(cfg.get("byte_fallback", True))
     user_defined_symbols = cfg.get("user_defined_symbols") or []
+    if args.disable_user_defined_symbols:
+        user_defined_symbols = []
+    elif args.user_defined_symbols is not None:
+        if args.user_defined_symbols.strip() == "":
+            user_defined_symbols = []
+        else:
+            user_defined_symbols = [
+                s.strip() for s in args.user_defined_symbols.split(",") if s.strip()
+            ]
 
     filter_spec = None
     if isinstance(cfg.get("filters"), dict):
@@ -159,6 +250,16 @@ def main() -> None:
         meta_path = Path(f"{model_prefix}.json")
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info("Saved model + metadata: %s", model_prefix)
+
+        if args.upload_repo:
+            logger.info("Uploading artifacts for vocab_size=%s to %s", vocab_size, args.upload_repo)
+            upload_model_artifacts(
+                repo_id=args.upload_repo,
+                repo_type=args.upload_repo_type,
+                model_prefix=model_prefix,
+                commit_message=args.upload_commit_message,
+                subdir=args.upload_subdir or None,
+            )
 
 
 if __name__ == "__main__":
