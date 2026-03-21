@@ -1,0 +1,17 @@
+model_type: bpe
+vocab_sizes:
+  - 64000
+  - 100000
+  - 128000
+normalization: nfkc
+character_coverage: 0.9995
+byte_fallback: true
+user_defined_symbols:
+  - "<pad>"
+  - "<unk>"
+  - "<bos>"
+  - "<eos>"
+  - "<mask>"
+filters:
+  min_chars: 20
+  min_words: 3

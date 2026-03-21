@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.venv/
+venv/
+
+# Data / artifacts
+/data/
+/artifacts/
+*.parquet
+*.model
+*.vocab
+*.jsonl
+*.csv
+*.tsv
+
+# Checkpoints
+checkpoints/

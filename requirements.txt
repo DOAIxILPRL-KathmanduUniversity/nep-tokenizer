@@ -1,0 +1,7 @@
+sentencepiece
+PyPDF2
+datasets
+huggingface_hub
+pyyaml
+tqdm
+tiktoken
