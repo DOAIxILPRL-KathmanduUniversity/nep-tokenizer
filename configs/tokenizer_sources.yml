@@ -49,8 +49,8 @@ sources:
 
   - id: ai4bharat/IndicCorpV2
     type: hf
-    config: hin_Deva
-    split: train
+    config: indiccorp_v2
+    split: hin_Deva
     field: text
     lang: hi
     filters:
