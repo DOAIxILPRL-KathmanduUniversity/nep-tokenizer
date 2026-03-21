@@ -31,6 +31,7 @@ DEFAULT_MODELS = [
     "sarvamai/sarvam-105b",
     "openai/gpt-oss-120b",
     "meta-llama/Llama-3.1-8B-Instruct",
+    "google/gemma-3-27b-it",
 ]
 
 

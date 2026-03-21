@@ -71,6 +71,8 @@ def render_markdown_table(
     metric: str,
     round_digits: int,
     lang_order: List[str] | None,
+    bold_min: bool,
+    align: str,
 ) -> str:
     if lang_order:
         langs = lang_order
@@ -81,18 +83,35 @@ def render_markdown_table(
     rows = []
     for lang in langs:
         row = [lang]
+        numeric_vals: List[float] = []
+        for model in model_order:
+            metrics = results.get(model, {}).get(lang)
+            if metrics and metric in metrics:
+                numeric_vals.append(metrics[metric])
+        min_val = min(numeric_vals) if numeric_vals else None
         for model in model_order:
             metrics = results.get(model, {}).get(lang)
             if not metrics or metric not in metrics:
                 row.append("NA")
             else:
-                row.append(f"{metrics[metric]:.{round_digits}f}")
+                val = metrics[metric]
+                cell = f"{val:.{round_digits}f}"
+                if bold_min and min_val is not None and val == min_val:
+                    cell = f"**{cell}**"
+                row.append(cell)
         rows.append(row)
 
     # Markdown table
     out_lines = []
     out_lines.append("| " + " | ".join(header) + " |")
-    out_lines.append("| " + " | ".join(["---"] * len(header)) + " |")
+    if align == "left":
+        sep = ["---"] * len(header)
+    elif align == "center":
+        sep = ["---"] + [":---:"] * (len(header) - 1)
+    else:
+        # right align numeric columns
+        sep = ["---"] + ["---:"] * (len(header) - 1)
+    out_lines.append("| " + " | ".join(sep) + " |")
     for row in rows:
         out_lines.append("| " + " | ".join(row) + " |")
     return "\n".join(out_lines)
@@ -119,17 +138,6 @@ def main() -> None:
         help="Decimal places to round (default: 4)",
     )
     parser.add_argument(
-        "--pretty-names",
-        action="store_true",
-        help="Replace '__' with '/' in model names",
-    )
-    parser.add_argument(
-        "--name-mode",
-        default="full",
-        choices=["full", "model"],
-        help="Model name display mode (full or just model name)",
-    )
-    parser.add_argument(
         "--aliases",
         default="",
         help="Comma-separated aliases like old:new,old2:new2",
@@ -138,6 +146,17 @@ def main() -> None:
         "--lang-order",
         default="",
         help="Comma-separated language order override (e.g. ne,hi,en,roman_ne,roman_hi)",
+    )
+    parser.add_argument(
+        "--no-bold-min",
+        action="store_true",
+        help="Disable bolding the minimum (best) value per row",
+    )
+    parser.add_argument(
+        "--align",
+        default="right",
+        choices=["left", "right", "center"],
+        help="Column alignment for numeric columns",
     )
     args = parser.parse_args()
 
@@ -152,9 +171,8 @@ def main() -> None:
             old, new = pair.split(":", 1)
             alias_map[old.strip()] = new.strip()
 
-    model_order, results = merge_results(
-        paths, args.pretty_names, args.name_mode, alias_map
-    )
+    # Defaults: pretty names + short model names (no CLI flags needed).
+    model_order, results = merge_results(paths, True, "model", alias_map)
     lang_order = [s.strip() for s in args.lang_order.split(",") if s.strip()] or None
 
     table = render_markdown_table(
@@ -163,6 +181,8 @@ def main() -> None:
         metric=args.metric,
         round_digits=args.round,
         lang_order=lang_order,
+        bold_min=not args.no_bold_min,
+        align=args.align,
     )
     print(table)
 
