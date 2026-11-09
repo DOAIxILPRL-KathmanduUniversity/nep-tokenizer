@@ -9,14 +9,21 @@ venv/
 hf_push/
 
 # Data / artifacts
-/data/
+/data/*
+!/data/benchmark_evaluation_results.json
+!/data/eval/
 /artifacts/
 *.parquet
 *.model
 *.vocab
 *.jsonl
+!/data/eval/*.jsonl
 *.csv
 *.tsv
 
 # Checkpoints
 checkpoints/
+
+# Reference cloned repositories
+reference_repos/
+external_repos/

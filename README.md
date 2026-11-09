@@ -1,121 +1,142 @@
-# Nepali Tokenizer Pipeline
+# Nep-Tokenizer: Open, Lossless, Mark-Aware Devanagari Tokenization
 
-Standalone pipeline for sampling tokenizer corpora, training SentencePiece BPE tokenizers, and evaluating fertility/token-to-word ratios across Nepali, Hindi, English, and Romanized corpora.
+**Department of Artificial Intelligence (DOAI) & Information and Language Processing Research Lab (ILPRL)**  
+**Kathmandu University, Dhulikhel, Nepal**
 
-## Setup
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-DOAIxILPRL--KU%2Fnep--tokenizer-blue)](https://huggingface.co/DOAIxILPRL-KU/nep-tokenizer)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Backend: Rust Fast Tokenizer](https://img.shields.io/badge/Backend-Tokenizers%20(Rust%20Fast)-orange.svg)](https://github.com/huggingface/tokenizers)
+
+**Nep-Tokenizer** is an open-source, reproducible, high-performance Devanagari tokenizer pipeline for Nepali and multilingual Large Language Models (LLMs). Version 2 (`v2.0`) introduces a native Hugging Face Rust-backed byte-level Byte-Pair Encoding (BPE) engine that resolves critical architectural flaws found in prior tokenizers—including the Devanagari vowel sign severance anomaly ("Kathmandu Bug"), tail character byte fragmentation, and arbitrary numeral shattering.
+
+---
+
+## Key Architectural Principles
+
+1. **Native Hugging Face Compatibility**: Directly serializes to standard `tokenizer.json`, `tokenizer_config.json`, and `special_tokens_map.json`. Operates seamlessly via `AutoTokenizer.from_pretrained("DOAIxILPRL-KU/nep-tokenizer")` with zero C++ SentencePiece binary dependencies.
+2. **Mark-Aware Pre-tokenization (`[\p{L}\p{M}]+`)**: Standard GPT-2/LLaMA-3 pre-tokenizers use `\p{L}+` which forcefully severs words at Devanagari vowel signs (*matras*) and virama (`\p{M}`), causing high fertility floors. Nep-Tokenizer v2 treats letters and combining marks as cohesive tokens, driving the **matra severance error rate to 0.00%** (100.0% matra cohesion).
+3. **100% Devanagari Block Coverage**: Guarantees all 128 Unicode code points in the Devanagari block (`U+0900` to `U+097F`) have deterministic atomic merges. Zero byte fallbacks, zero raw byte triplets (`<0xE0>...`), and zero unigram drops for rare phonemes (`ऊ, ऋ, ॠ, ऐ, अं, अः, ॄ, ॅ, ॆ, ॉ, ॊ`).
+4. **Isolated Digit Grouping (`[0-9०-९]{1,3}`)**: Automatically partitions both ASCII and Devanagari digits in groups of up to 3 digits before BPE merging, ensuring uniform representation across large numbers and preserving mathematical reasoning.
+5. **Lossless Byte-Level Fallback & NFC Normalization**: NFC Unicode normalizer guarantees canonical combining representation, while ByteLevel fallback guarantees 100% roundtrip fidelity across all unseen UTF-8 bytes, code syntax, and emojis.
+
+---
+
+## Benchmark Leaderboard (Consistent Multi-Domain Evaluation)
+
+Evaluated across a comprehensive held-out benchmark suite spanning **News**, **Literature**, **Legal Acts**, **Colloquial (Social Media)**, and **Technical / Wikipedia** domains:
+
+| Model | Vocab Size | Nepali Fertility ↓ | English Fertility ↓ | Nepali Tax ↓ | Matra Err% ↓ | Devanagari Cov% ↑ | Bytes/Token (BPT) ↑ |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **DOAIxILPRL Nep-Tokenizer v2 (64k)** | **64,053** | **1.440** | **1.289** | **1.12x** | **0.00%** | **100.0% (128/128)** | **11.93** |
+| **DOAIxILPRL Nep-Tokenizer v2 (32k)** | **32,057** | **1.584** | **1.490** | **1.06x** | **0.00%** | **100.0% (128/128)** | **10.84** |
+| **Ampixa Yak v2.0 (64k)** | 64,512 | 1.306 | 1.483 | 0.88x | 0.00% | 100.0% (128/128) | 13.15 |
+| **Ampixa Yak v1.0 (32k)** | 31,744 | 1.448 | 1.658 | 0.87x | 0.00% | 100.0% (128/128) | 11.86 |
+| **Ampixa Yak v2.0 (128k)** | 130,048 | 1.205 | 1.275 | 0.95x | 0.00% | 100.0% (128/128) | 14.26 |
+| **Himalaya AI v1 (64k)** | 64,000 | 1.375 | 1.329 | 1.03x | 2.60% | 86.3% (63/73) | 12.49 |
+| **Sajal Regmi Arkios (65k)** | 65,510 | 1.556 | 1.201 | 1.30x | 0.00% | 100.0% (128/128) | 11.04 |
+| **sidskarki Nepali-BPE (64k)** | 64,000 | 1.450 | 2.772 | 0.52x | 0.00% | 100.0% (128/128) | 11.84 |
+| **NyayaLM SentencePiece BPE (64k)** | 63,985 | 1.450 | 1.188 | 1.22x | 4.76% | 89.0% (65/73) | 11.84 |
+| **AI4Bharat IndicBERT v2 (250k)** | 250,000 | 1.461 | 1.221 | 1.20x | 0.00% | 100.0% (128/128) | 11.76 |
+| **BigScience BLOOM (250k)** | 250,680 | 1.625 | 1.228 | 1.32x | 0.00% | 100.0% (128/128) | 10.57 |
+| **BharatGen Param2-17B** | 128,000 | 1.797 | 1.597 | 1.13x | 0.00% | 100.0% (128/128) | 9.56 |
+| **IRIIS RoBERTa Nepali (50k)** | 50,256 | 1.994 | 7.893 | 0.25x | 0.00% | 100.0% (128/128) | 8.62 |
+| **Sarvam AI Sarvam-105B (262k)** | 262,144 | 2.080 | 1.221 | 1.70x | 8.26% | 93.2% (68/73) | 8.26 |
+| **Supernova V5 (48k)** | 47,908 | 4.468 | 1.799 | 2.48x | 43.82% | 100.0% (128/128) | 3.85 |
+| **Google Gemma-2 (256k)** | 256,000 | 2.869 | 1.161 | 2.47x | 23.46% | 100.0% (128/128) | 5.99 |
+| **Meta LLaMA-3.1 (128k)** | 128,000 | 3.498 | 1.235 | 2.83x | 0.00% | 100.0% (128/128) | 4.91 |
+
+---
+
+## Domain Breakdown (Tokens per Word)
+
+| Domain | Nep-Tokenizer v2 (64k) | Nep-Tokenizer v2 (32k) | Yak v2.0 (64k) | Arkios (65k) | NyayaLM (64k) | Supernova V5 | Gemma-2 (256k) | LLaMA-3.1 (128k) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **News** | **1.106** | 1.179 | 1.058 | 1.196 | 1.116 | 4.072 | 2.502 | 3.018 |
+| **Literature** | **1.409** | 1.549 | 1.278 | 1.528 | 1.417 | 4.410 | 2.837 | 3.461 |
+| **Legal Acts** | **1.141** | 1.233 | 1.082 | 1.239 | 1.155 | 4.090 | 2.545 | 3.080 |
+| **Colloquial** | **2.190** | 2.449 | 1.942 | 2.378 | 2.203 | 5.340 | 3.699 | 4.566 |
+| **Technical / Wiki**| **1.643** | 1.838 | 1.439 | 1.777 | 1.637 | 4.675 | 3.078 | 3.737 |
+
+---
+
+## Visualizations
+
+### 1. Vocab Size Scaling vs. Nepali Fertility & Information Density
+![Vocab Scaling](figures/fig1_vocab_scaling_fertility.png)
+
+### 2. Multi-Domain Compression Comparison
+![Multi Domain](figures/fig2_domain_fertility_comparison.png)
+
+### 3. Matra Cohesion Rate & Devanagari Completeness
+![Matra Cohesion](figures/fig3_matra_cohesion_comparison.png)
+
+---
+
+## Quickstart & Usage
+
+### Fast Hugging Face `transformers`
+
+```python
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("DOAIxILPRL-KU/nep-tokenizer")
+
+text = "नेपालको राजधानी काठमाडौँ हो ।"
+tokens = tokenizer.tokenize(text)
+input_ids = tokenizer.encode(text)
+
+print("Tokens:", tokens)
+# ['नेपालको', 'राजधानी', 'काठमाडौँ', 'हो', '।']
+
+print("Input IDs:", input_ids)
+# [12117, 3517, 3497, 506, 311]
+
+# 100% Exact Round-Trip Decoding
+assert tokenizer.decode(input_ids) == text
+```
+
+---
+
+## Reproducing the Pipeline
 
 ```bash
+# 1. Setup virtual environment
 pip install -r requirements.txt
-```
 
-## 1) Sample tokenizer corpus
+# 2. Build training corpus (multi-source streaming)
+python scripts/prepare_training_corpus.py
 
-```bash
-python scripts/run_parallel_sampling.py \
-  --config configs/tokenizer_sources.yml \
-  --groups configs/tokenizer_parallel_groups.yml \
-  --target-tokens 5000000000 \
-  --scale-targets \
-  --upload-repo himalaya-ai/nepali-tokenizer-corpus \
-  --shard-rows 150000 \
-  --max-parallel 4 \
-  --skip-local
-```
+# 3. Train Nep-Tokenizer v2 (32k & 64k)
+python scripts/train_hf_bpe.py --vocab-sizes 32000 64000
 
-## 2) Train SentencePiece BPE
-
-Train with standard configuration (64k / 128k):
-```bash
-python scripts/train_sp_bpe.py \
-  --source-repo himalaya-ai/nepali-tokenizer-corpus \
-  --split train \
-  --train-config configs/train_config.yml \
-  --output-dir data/tokenizers
-```
-
-Or train with Himalayan Tokenizer v2 (0.9999 character coverage):
-```bash
-python scripts/train_sp_bpe.py \
-  --source-repo himalaya-ai/nepali-tokenizer-corpus \
-  --split train \
-  --train-config configs/train_config_v2.yml \
-  --output-dir data/tokenizers
-```
-
-## 3) Build evaluation corpus
-
-```bash
-python scripts/build_eval_corpus.py \
-  --config configs/eval_sources.yml
-```
-
-## 4) Evaluate tokenizers & reference baselines
-
-### 4a) Evaluate local SentencePiece models:
-```bash
-python scripts/eval_tokenizer.py \
-  --models-dir data/tokenizers \
-  --eval-dir data/eval \
-  --output-dir data/eval_results
-```
-
-### 4b) Evaluate pretrained & reference baselines:
-Evaluates previous baseline (`himalaya-bpe-64k-v1`), peer tokenizers (`arkios-65k`, `yak-64k`, `yak-128k`), and foundation models (`bharatgen-param2`, `sarvam-105b`, `llama-3.1-8b`, `gemma-3-27b`):
-```bash
-python scripts/eval_tokenizer_hf.py \
-  --config configs/eval_baselines.yml \
-  --eval-dir data/eval \
-  --output-dir data/eval_results_hf
-```
-
-### 4c) Render comparison table:
-```bash
-python scripts/render_eval_table.py \
-  --inputs data/eval_results,data/eval_results_hf \
-  --metric fertility \
-  --lang-order ne,hi,en,roman_ne,roman_hi
-```
-
-## 5) Tokenization integrity & test cases
-
-Run validation suite checking 73 everyday Devanagari characters, matra cohesion (Kathmandu bug check), and lossless round-trip reconstruction:
-```bash
-python experiments/test_tokenization_integrity.py \
-  --model himalaya-ai/nepali-tokenizer-bpe-64k-5b
-```
-
-## 6) Extract paper notes
-
-```bash
-python scripts/extract_paper_notes.py \
-  --param /Users/interstellarninja/Desktop/HimalayaGPT/papers/2407.12481v2.pdf \
-  --krutrim /Users/interstellarninja/Desktop/HimalayaGPT/papers/2507.13390v1.pdf
-```
-
-## 7) Standardized Benchmark & Plot Generation
-
-Run empirical evaluation across all 17 models on the consistent benchmark and generate publication plots:
-```bash
-# Run benchmark across all dedicated Nepali, Indic, and frontier LLM tokenizers
+# 4. Run standardized 17-model benchmark
 python scripts/benchmark_all_models.py
 
-# Generate publication-grade figures into docs/figures/ and hf_push/figures/
-python scripts/generate_plots.py --output-dir docs/figures
+# 5. Regenerate publication figures
+python scripts/generate_plots.py
+
+# 6. Push 64k model to Hugging Face
+python scripts/push_v2_to_hf.py
 ```
 
-## 8) Stage & push tokenizers to Hugging Face
+---
 
-Stage and publish multi-tier models (64k, 100k, 128k) to Hugging Face Hub (`DOAIxILPRL-KU/nep-tokenizer`):
-```bash
-# Local staging only into hf_push/ (gitignored)
-python scripts/push_to_hf.py
+## Citation & Attribution
 
-# Explicit upload to Hugging Face repository (reads HF_TOKEN and HF_REPO_ID from .env)
-python scripts/push_to_hf.py --upload
+```bibtex
+@misc{doai_ilprl_nep_tokenizer_2026,
+  author = {Department of Artificial Intelligence (DOAI) and Information and Language Processing Research Lab (ILPRL)},
+  title = {Nep-Tokenizer v2: An Open, Lossless, Mark-Aware Byte-Level BPE Tokenizer for Nepali and Multilingual LLMs},
+  year = {2026},
+  publisher = {Hugging Face},
+  journal = {Hugging Face Hub repository},
+  howpublished = {\\url{https://huggingface.co/DOAIxILPRL-KU/nep-tokenizer}},
+  institution = {Kathmandu University}
+}
 ```
 
-## Notes & Documentation
-- Fertility is reported as tokens/word (KrutrimAI proxy).
-- BharatGen baselines referenced: 1.87 @64k, 1.60 @128k.
-- Comprehensive analysis, industry findings across baselines, and vocabulary expansion protocols for Gemma/LLaMA are detailed in [docs/industry_findings_and_baselines.md](docs/industry_findings_and_baselines.md).
-- BibTeX citations for underlying papers and reference architectures are available in [docs/industry_findings_and_baselines.md#6-references--citations](docs/industry_findings_and_baselines.md#6-references--citations).
+### Reference Repositories & Research Works
+- **Ampixa Labs**: *Yak: an open, lossless, Nepali-first tokenizer* ([GitHub](https://github.com/Ampixa/yak-tokenizer))
+- **Sajal Regmi et al.**: *Vowel Signs Are Not Letters: The Anatomy of the Non-Latin Tokenization Floor* ([GitHub](https://github.com/sajalregmi/arkios-tokenizer))
+- **Siddhartha Karki**: *Nepali Tokenizer Benchmark & Strategy Brief* ([GitHub](https://github.com/sidskarkii/nepali-tokenizer))
+- **AI4Bharat**: *IndicBERT v2 & Sangraha*

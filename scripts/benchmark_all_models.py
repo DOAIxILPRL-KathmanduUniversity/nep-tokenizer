@@ -1,20 +1,33 @@
 #!/usr/bin/env python3
-"""Standardized benchmark evaluation script across ALL Nepali, Indic, and frontier LLM tokenizers.
+"""
+scripts/benchmark_all_models.py
+
+Standardized benchmark evaluation script across ALL Nepali, Indic, and frontier LLM tokenizers.
+Affiliation: Department of Artificial Intelligence (DOAI) &
+             Information and Language Processing Research Lab (ILPRL),
+             Kathmandu University.
 
 Evaluates on a consistent multi-domain benchmark:
 - General News, Literature, Legal, Colloquial, Technical
-- English Parity (FLORES-style parallel reference)
+- English Parity & Nepali Tax (F_Nepali / F_English)
 - Severed Matra Anomaly Rate (The Kathmandu Bug check)
 - Devanagari Character Coverage & Byte Fallback Rate (all 73 phonemes)
+- Information Density: Bytes Per Token (BPT) & Tokens Per Char (TPC)
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import pickle
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+import sentencepiece as spm
+from huggingface_hub import hf_hub_download
+from tokenizers import Tokenizer as RustTokenizer
+from transformers import AutoTokenizer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,6 +58,49 @@ COMBINING_MARKS = {
 }
 
 
+# Custom Supernova Trie Loader
+class SupernovaTrie:
+    def encode(self, text: str) -> List[int]:
+        tokens = []
+        i = 0
+        n = len(text)
+        while i < n:
+            node = self.trie
+            last_match = None
+            last_j = i
+            for j in range(i, n):
+                ch = text[j]
+                if ch in node:
+                    node = node[ch]
+                    if "__idx__" in node:
+                        last_match = node["__idx__"]
+                        last_j = j + 1
+                else:
+                    break
+            if last_match is not None:
+                tokens.append(last_match)
+                i = last_j
+            else:
+                tokens.append(-1)
+                i += 1
+        return tokens
+
+
+class SupernovaV5Tokenizer:
+    def encode(self, text: str) -> List[int]:
+        return self.trie_obj.encode(text)
+
+
+def load_supernova():
+    p_tok = hf_hub_download("Supernova11c/Supernova-NepaliFast-V5", "tokenizer_v5.pkl")
+    # Patch module namespace for pickle
+    sys.modules["__main__"].SupernovaTrie = SupernovaTrie
+    sys.modules["__main__"].SupernovaV5Tokenizer = SupernovaV5Tokenizer
+    with open(p_tok, "rb") as f:
+        tok = pickle.load(f)
+    return tok
+
+
 class TokenizerWrapper:
     """Unified wrapper around SentencePiece, Hugging Face Tokenizers, and Fast Tokenizers."""
 
@@ -57,6 +113,10 @@ class TokenizerWrapper:
     def encode(self, text: str) -> List[int]:
         if self.kind == "sp":
             return self.backend.encode(text, out_type=int)
+        elif self.kind == "supernova":
+            return self.backend.encode(text)
+        elif self.kind == "rust_tokenizers":
+            return self.backend.encode(text).ids
         try:
             return self.backend.encode(text, add_special_tokens=False)
         except Exception:
@@ -65,6 +125,12 @@ class TokenizerWrapper:
     def tokenize_pieces(self, text: str) -> List[str]:
         if self.kind == "sp":
             return self.backend.encode(text, out_type=str)
+        elif self.kind == "supernova":
+            ids = self.backend.encode(text)
+            vocab = self.backend.trie_obj.vocab
+            return [vocab.get(i, f"<{i}>") for i in ids]
+        elif self.kind == "rust_tokenizers":
+            return self.backend.encode(text).tokens
         try:
             return self.backend.tokenize(text)
         except Exception:
@@ -149,12 +215,11 @@ def evaluate_devanagari_coverage(tok: TokenizerWrapper) -> Dict[str, Any]:
 
     for ch in all_chars:
         pieces = tok.tokenize_pieces(ch)
-        # Check if pieces contain raw byte fallback e.g. <0xE0> or [UNK] or 
         is_fallback = any(
-            p.startswith("<0x") or p in ("<unk>", "[UNK]", "⁇", "\ufffd")
+            p.startswith("<0x") or p in ("<unk>", "[UNK]", "⁇", "\ufffd", "<-1>")
             for p in pieces
         )
-        if is_fallback:
+        if is_fallback or len(pieces) > 2:
             fallback_chars.append(ch)
 
     covered = total - len(fallback_chars)
@@ -168,9 +233,6 @@ def evaluate_devanagari_coverage(tok: TokenizerWrapper) -> Dict[str, Any]:
 
 
 def main():
-    import sentencepiece as spm
-    from transformers import AutoTokenizer
-
     eval_ne = REPO_ROOT / "data" / "eval" / "eval_ne.jsonl"
     eval_en = REPO_ROOT / "data" / "eval" / "eval_en.jsonl"
 
@@ -178,7 +240,6 @@ def main():
         logger.error("Evaluation files not found in data/eval/")
         sys.exit(1)
 
-    # Matra stress test samples
     cohesion_samples = [
         "काठमाडौं उपत्यकामा वायु प्रदूषण नियन्त्रणका लागि विद्युतीय सार्वजनिक यातायात प्रणाली विस्तार गर्नुपर्छ ।",
         "नेपालको संविधान २०७२ ले संघीय लोकतान्त्रिक गणतन्त्रलाई संस्थागत गरेको छ ।",
@@ -187,93 +248,110 @@ def main():
         "प्रकृतिको मनोरम छटा, हरियाली डाँडाकाँडा र नदीनालाहरूले मन आनन्दित तुल्याउँछन् ।",
     ]
 
-    model_registry: List[Tuple[str, str, str, Dict[str, Any]]] = [
-        # 1. DOAI x ILPRL Nep-Tokenizer v2
-        ("Nep-Tokenizer v2 (128k)", "sp", str(REPO_ROOT / "hf_push" / "128k" / "tokenizer.model"), {}),
-        ("Nep-Tokenizer v2 (100k)", "sp", str(REPO_ROOT / "hf_push" / "100k" / "tokenizer.model"), {}),
-        ("Nep-Tokenizer v2 (64k)", "sp", str(REPO_ROOT / "hf_push" / "64k" / "tokenizer.model"), {}),
+    # Full Model Evaluation Registry
+    model_configs: List[Dict[str, Any]] = [
+        # 1. DOAI x ILPRL Nep-Tokenizer v2 (Our hero models)
+        {"name": "Nep-Tokenizer v2 (64k)", "type": "hf_dir", "path": str(REPO_ROOT / "hf_push" / "64k")},
+        {"name": "Nep-Tokenizer v2 (32k)", "type": "hf_dir", "path": str(REPO_ROOT / "hf_push" / "32k")},
 
-        # 2. Himalayan AI v1 Baseline
-        ("Himalaya AI v1 (128k)", "sp_hf", "himalaya-ai/nepali-tokenizer-bpe-128k-5b", {}),
-        ("Himalaya AI v1 (100k)", "sp_hf", "himalaya-ai/nepali-tokenizer-bpe-100k-5b", {}),
-        ("Himalaya AI v1 (64k)", "sp_hf", "himalaya-ai/nepali-tokenizer-bpe-64k-5b", {}),
+        # 2. Yak Tokenizer
+        {"name": "Yak v2.0 (64k)", "type": "hf_hub", "repo": "ampixa/yak-tokenizer", "subfolder": "v2.0/64k"},
+        {"name": "Yak v1.0 (32k)", "type": "hf_hub", "repo": "ampixa/yak-tokenizer", "subfolder": "v1.0/32k"},
+        {"name": "Yak v2.0 (128k)", "type": "hf_hub", "repo": "ampixa/yak-tokenizer", "subfolder": "v2.0/128k"},
 
-        # 3. Yak v2.0
-        ("Yak v2.0 (128k)", "hf", "ampixa/yak-tokenizer", {"subfolder": "v2.0/128k"}),
-        ("Yak v2.0 (64k)", "hf", "ampixa/yak-tokenizer", {"subfolder": "v2.0/64k"}),
+        # 3. Peer Nepali Tokenizers
+        {"name": "Arkios (65k)", "type": "hf_hub", "repo": "sajalregmi4/arkios-1b-base"},
+        {"name": "NyayaLM-BPE (64k)", "type": "hf_hub", "repo": "chhatramani/nyayalm-SentencePiece_BPE-64k"},
+        {"name": "sidskarki-BPE (64k)", "type": "sp_hub", "repo": "sidskarki/nepali-bpe-tokenizer", "file": "nepali_bpe_64k.model"},
+        {"name": "Supernova V5 (48k)", "type": "supernova"},
+        {"name": "Himalaya AI v1 (64k)", "type": "sp_hub", "repo": "himalaya-ai/nepali-tokenizer-bpe-64k-5b", "file": "himalaya-ai_nepali-tokenizer-corpus-64000.model"},
 
-        # 4. Peer Nepali & Indic
-        ("Arkios (65k)", "hf", "sajalregmi4/arkios-1b-base", {}),
-        ("Qwen3-Nepali (166k)", "hf", "sidskarki/qwen3-nepali-tokenizer", {}),
-        ("NepaliBPE (50k)", "hf", "Aananda-giri/NepaliBPE", {}),
-        ("NepaliBERT (50k)", "hf", "Rajan/NepaliBERT", {}),
-        ("BERT-Nepali (25k)", "hf", "raygx/BERT_Nepali_Tokenizer", {}),
-        ("BharatGen Param-1 (256k)", "hf", "bharatgenai/Param-1-5B", {}),
-        ("Sarvam-1 (68k)", "hf", "sarvamai/sarvam-1", {}),
+        # 4. Regional Indic Foundations
+        {"name": "IndicBERT v2 (250k)", "type": "hf_hub", "repo": "ai4bharat/IndicBERTv2-MLM-only"},
+        {"name": "BharatGen Param2-17B", "type": "hf_hub", "repo": "bharatgenai/Param2-17B-A2.4B-Thinking"},
+        {"name": "Sarvam-105b (262k)", "type": "rust_hub", "repo": "sarvamai/sarvam-105b", "file": "tokenizer.json"},
+        {"name": "RoBERTa Nepali (50k)", "type": "hf_hub", "repo": "IRIIS-RESEARCH/RoBERTa_Nepali_125M"},
+        {"name": "BLOOM (250k)", "type": "hf_hub", "repo": "bigscience/bloom"},
 
-        # 5. Global Frontier Baselines
-        ("LLaMA-3.1 (128k)", "hf", "unsloth/Meta-Llama-3.1-8B", {}),
-        ("Gemma-2 (256k)", "hf", "unsloth/gemma-2-9b", {}),
+        # 5. Global Frontier Multilingual Baselines
+        {"name": "LLaMA-3.1 (128k)", "type": "hf_hub", "repo": "unsloth/Meta-Llama-3.1-8B"},
+        {"name": "Gemma-2 (256k)", "type": "hf_hub", "repo": "unsloth/gemma-2-9b"},
     ]
 
-    results = []
+    loaded_tokenizers: List[TokenizerWrapper] = []
 
-    for name, kind, path_or_repo, kwargs in model_registry:
-        logger.info("Evaluating: %s ...", name)
+    for cfg in model_configs:
+        name = cfg["name"]
+        mtype = cfg["type"]
+        logger.info(f"Loading {name} ({mtype})...")
         try:
-            if kind == "sp":
-                if not Path(path_or_repo).exists():
-                    logger.warning("File not found: %s", path_or_repo)
-                    continue
+            if mtype == "hf_dir":
+                tok = AutoTokenizer.from_pretrained(cfg["path"])
+                loaded_tokenizers.append(TokenizerWrapper(name, tok, "hf", tok.vocab_size))
+            elif mtype == "hf_hub":
+                sub = cfg.get("subfolder")
+                tok = AutoTokenizer.from_pretrained(cfg["repo"], subfolder=sub, trust_remote_code=True) if sub else AutoTokenizer.from_pretrained(cfg["repo"], trust_remote_code=True)
+                loaded_tokenizers.append(TokenizerWrapper(name, tok, "hf", tok.vocab_size))
+            elif mtype == "sp_hub":
+                p = hf_hub_download(cfg["repo"], cfg["file"])
                 sp = spm.SentencePieceProcessor()
-                sp.load(path_or_repo)
-                tok = TokenizerWrapper(name, sp, "sp", sp.vocab_size())
-            elif kind == "sp_hf":
-                from huggingface_hub import hf_hub_download, list_repo_files
-                files = list_repo_files(path_or_repo)
-                m_file = [f for f in files if f.endswith(".model")][0]
-                local_m = hf_hub_download(path_or_repo, m_file)
-                sp = spm.SentencePieceProcessor()
-                sp.load(local_m)
-                tok = TokenizerWrapper(name, sp, "sp", sp.vocab_size())
-            else:
-                hf_tok = AutoTokenizer.from_pretrained(path_or_repo, trust_remote_code=True, **kwargs)
-                tok = TokenizerWrapper(name, hf_tok, "hf", len(hf_tok))
-
-            ne_metrics = evaluate_dataset(tok, eval_ne)
-            en_metrics = evaluate_dataset(tok, eval_en)
-
-            parity = round(ne_metrics["fertility"] / max(en_metrics["fertility"], 0.001), 2)
-            severed_rate, sev_cnt, tot_cnt = evaluate_matra_cohesion(tok, cohesion_samples)
-            cov_metrics = evaluate_devanagari_coverage(tok)
-
-            res = {
-                "name": name,
-                "vocab_size": tok.vocab_size,
-                "nepali_fertility": ne_metrics["fertility"],
-                "bpt": ne_metrics["bpt"],
-                "tpc": ne_metrics["tpc"],
-                "english_fertility": en_metrics["fertility"],
-                "english_parity": parity,
-                "severed_matra_rate": severed_rate,
-                "devanagari_coverage_pct": cov_metrics["coverage_pct"],
-                "fallbacks_count": len(cov_metrics["fallbacks"]),
-                "fallbacks": cov_metrics["fallbacks"],
-                "domain_fertilities": ne_metrics["domain_fertilities"],
-            }
-            results.append(res)
-            logger.info("  -> Fert: %s | BPT: %s | Parity: %sx | Severed: %s%% | Cov: %s%%",
-                        res["nepali_fertility"], res["bpt"], res["english_parity"],
-                        res["severed_matra_rate"], res["devanagari_coverage_pct"])
-
+                sp.load(p)
+                loaded_tokenizers.append(TokenizerWrapper(name, sp, "sp", sp.get_piece_size()))
+            elif mtype == "rust_hub":
+                p = hf_hub_download(cfg["repo"], cfg["file"])
+                rtok = RustTokenizer.from_file(p)
+                loaded_tokenizers.append(TokenizerWrapper(name, rtok, "rust_tokenizers", rtok.get_vocab_size()))
+            elif mtype == "supernova":
+                s_tok = load_supernova()
+                loaded_tokenizers.append(TokenizerWrapper(name, s_tok, "supernova", 47908))
+            logger.info(f"  -> Successfully loaded {name}")
         except Exception as e:
-            logger.error("Error evaluating %s: %s", name, e)
+            logger.error(f"  -> FAILED to load {name}: {e}")
 
+    # Benchmark Execution
+    results = []
+    print("\n" + "=" * 110)
+    print(f"{'Model':<26} | {'Vocab':<8} | {'NE Fert':<8} | {'EN Fert':<8} | {'Tax':<6} | {'Matra Err%':<10} | {'Deva Cov%':<10} | {'BPT':<5}")
+    print("=" * 110)
+
+    for tok in loaded_tokenizers:
+        ne_metrics = evaluate_dataset(tok, eval_ne)
+        en_metrics = evaluate_dataset(tok, eval_en)
+
+        tax = round(ne_metrics["fertility"] / max(en_metrics["fertility"], 0.01), 2)
+        err_rate, _, _ = evaluate_matra_cohesion(tok, cohesion_samples)
+        coverage = evaluate_devanagari_coverage(tok)
+
+        res = {
+            "name": tok.name,
+            "vocab_size": tok.vocab_size,
+            "ne_fertility": ne_metrics["fertility"],
+            "en_fertility": en_metrics["fertility"],
+            "nepali_tax": tax,
+            "matra_severed_rate": err_rate,
+            "matra_cohesion_rate": round(100.0 - err_rate, 2),
+            "devanagari_coverage_pct": coverage["coverage_pct"],
+            "fallbacks_count": len(coverage["fallbacks"]),
+            "bpt": ne_metrics["bpt"],
+            "tpc": ne_metrics["tpc"],
+            "domains": ne_metrics["domain_fertilities"],
+        }
+        results.append(res)
+
+        print(
+            f"{tok.name:<26} | {tok.vocab_size:<8} | {ne_metrics['fertility']:<8.3f} | "
+            f"{en_metrics['fertility']:<8.3f} | {tax:<6.2f}x | {err_rate:<10.2f} | "
+            f"{coverage['coverage_pct']:<10.1f} | {ne_metrics['bpt']:<5.2f}"
+        )
+
+    print("=" * 110)
+
+    # Save to disk
     out_file = REPO_ROOT / "data" / "benchmark_evaluation_results.json"
-    out_file.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
-    logger.info("Saved evaluation results to %s", out_file)
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+    logger.info(f"Saved benchmark results to {out_file}")
 
 
 if __name__ == "__main__":
     main()
-

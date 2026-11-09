@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Generate publication-quality evaluation figures for nep-tokenizer across ALL evaluated models.
+"""
+scripts/generate_plots.py
+
+Generate publication-quality evaluation figures for Nep-Tokenizer v2 across ALL evaluated models.
+Affiliation: Department of Artificial Intelligence (DOAI) &
+             Information and Language Processing Research Lab (ILPRL),
+             Kathmandu University.
 
 Loads empirical benchmark results directly from data/benchmark_evaluation_results.json.
 
@@ -12,7 +18,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -41,279 +49,207 @@ def load_benchmark_data() -> list[dict]:
 
 
 def plot_fig1_vocab_scaling(data: list[dict], output_dir: Path) -> Path:
-    """Figure 1: Vocab Size Scaling vs. Nepali Fertility and Information Density (BPT) across ALL models."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5), dpi=300)
+    """Figure 1: Vocab Size Scaling vs. Nepali Fertility and Information Density (BPT) across models."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6), dpi=300)
 
-    # Model category styling
-    category_map = {
-        "DOAI x ILPRL Nep-Tokenizer v2": ("#1f77b4", "o-", 2.5, 8),
-        "Himalaya AI v1 Baseline": ("#17becf", "d--", 1.8, 7),
-        "Ampixa Yak v2.0": ("#2ca02c", "s-.", 2.2, 7),
-        "Sajal Regmi Arkios (65k)": ("#ff7f0e", "^", 0, 9),
-        "Siddhartha Karki Qwen3-Nepali (166k)": ("#9467bd", "P", 0, 9),
-        "Aananda Giri NepaliBPE (50k)": ("#8c564b", "v", 0, 8),
-        "Rajan NepaliBERT (50k)": ("#e377c2", "X", 0, 8),
-        "Raygx BERT-Nepali (25k)": ("#7f7f7f", "*", 0, 9),
-        "BharatGen Param-1 (256k)": ("#bcbd22", "H", 0, 9),
-        "Sarvam-1 (68k)": ("#e6ab02", "D", 0, 8),
-        "Meta LLaMA-3.1 (128k)": ("#d62728", "x", 0, 10),
-        "Google Gemma-2 (256k)": ("#b15928", "+", 0, 10),
-    }
-
-    # Group series for line-plot multi-tier models
-    series_points = {
-        "DOAI x ILPRL Nep-Tokenizer v2": ([], [], []),
-        "Himalaya AI v1 Baseline": ([], [], []),
-        "Ampixa Yak v2.0": ([], [], []),
-    }
-    scatter_points = []
+    # Separate points for line connections vs scatters
+    nep_v2_x, nep_v2_y, nep_v2_bpt = [], [], []
+    yak_x, yak_y, yak_bpt = [], [], []
+    others = []
 
     for r in data:
         name = r["name"]
-        vocab_k = r["vocab_size"] / 1000.0
-        fert = r["nepali_fertility"]
+        vk = r["vocab_size"] / 1000.0
+        fert = r["ne_fertility"]
         bpt = r["bpt"]
 
         if "Nep-Tokenizer v2" in name:
-            series_points["DOAI x ILPRL Nep-Tokenizer v2"][0].append(vocab_k)
-            series_points["DOAI x ILPRL Nep-Tokenizer v2"][1].append(fert)
-            series_points["DOAI x ILPRL Nep-Tokenizer v2"][2].append(bpt)
-        elif "Himalaya AI v1" in name:
-            series_points["Himalaya AI v1 Baseline"][0].append(vocab_k)
-            series_points["Himalaya AI v1 Baseline"][1].append(fert)
-            series_points["Himalaya AI v1 Baseline"][2].append(bpt)
-        elif "Yak v2.0" in name:
-            series_points["Ampixa Yak v2.0"][0].append(vocab_k)
-            series_points["Ampixa Yak v2.0"][1].append(fert)
-            series_points["Ampixa Yak v2.0"][2].append(bpt)
+            nep_v2_x.append(vk)
+            nep_v2_y.append(fert)
+            nep_v2_bpt.append(bpt)
+        elif "Yak" in name:
+            yak_x.append(vk)
+            yak_y.append(fert)
+            yak_bpt.append(bpt)
         else:
-            scatter_points.append((name, vocab_k, fert, bpt))
+            others.append((name, vk, fert, bpt))
 
-    # Panel A: Fertility (Lower is Better)
-    for cat_name, (vocabs, ferts, _) in series_points.items():
-        if vocabs:
-            sorted_idx = np.argsort(vocabs)
-            vx = np.array(vocabs)[sorted_idx]
-            vy = np.array(ferts)[sorted_idx]
-            color, style, lw, ms = category_map[cat_name]
-            ax1.plot(vx, vy, style, color=color, linewidth=lw, markersize=ms, label=cat_name)
+    # Sort lines
+    idx = np.argsort(nep_v2_x)
+    ax1.plot(np.array(nep_v2_x)[idx], np.array(nep_v2_y)[idx], "o-", color="#1f77b4", linewidth=2.8, markersize=9, label="DOAIxILPRL Nep-Tokenizer v2")
+    ax2.plot(np.array(nep_v2_x)[idx], np.array(nep_v2_bpt)[idx], "o-", color="#1f77b4", linewidth=2.8, markersize=9, label="DOAIxILPRL Nep-Tokenizer v2")
 
-    for name, vx, vy, _ in scatter_points:
-        matched_cat = next((k for k in category_map if name.split()[0] in k), None)
-        color = category_map[matched_cat][0] if matched_cat else "#333333"
-        marker = category_map[matched_cat][1] if matched_cat else "o"
-        ax1.scatter(vx, vy, color=color, marker=marker, s=80, label=name, zorder=5)
+    idx_y = np.argsort(yak_x)
+    ax1.plot(np.array(yak_x)[idx_y], np.array(yak_y)[idx_y], "s--", color="#2ca02c", linewidth=2.0, markersize=8, label="Ampixa Yak")
+    ax2.plot(np.array(yak_x)[idx_y], np.array(yak_bpt)[idx_y], "s--", color="#2ca02c", linewidth=2.0, markersize=8, label="Ampixa Yak")
 
-    ax1.set_title("Nepali Token Fertility vs. Vocabulary Size (Lower = Better)", fontweight="bold")
+    # Palette for other models
+    palette = ["#ff7f0e", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#b15928", "#33a02c", "#fb9a99"]
+    markers = ["^", "v", "D", "P", "X", "*", "H", "x", "+", "<", ">"]
+
+    for i, (name, vk, fert, bpt) in enumerate(others):
+        c = palette[i % len(palette)]
+        m = markers[i % len(markers)]
+        ax1.scatter([vk], [fert], color=c, marker=m, s=90, label=name, zorder=5)
+        ax2.scatter([vk], [bpt], color=c, marker=m, s=90, label=name, zorder=5)
+
     ax1.set_xlabel("Vocabulary Size (k)")
-    ax1.set_ylabel("Tokens per Word (Fertility)")
-    ax1.set_xlim(15, 275)
-    ax1.set_ylim(0.8, 4.0)
+    ax1.set_ylabel("Nepali Fertility (tokens / word)")
+    ax1.set_title("(a) Nepali Subword Fertility vs. Vocab Scaling (Lower is Better)")
     ax1.grid(True, linestyle="--", alpha=0.5)
-    ax1.legend(loc="upper right", frameon=True, fontsize=8, ncol=1)
 
-    # Panel B: Bytes per Token (Higher is Better)
-    for cat_name, (vocabs, _, bpts) in series_points.items():
-        if vocabs:
-            sorted_idx = np.argsort(vocabs)
-            vx = np.array(vocabs)[sorted_idx]
-            vy = np.array(bpts)[sorted_idx]
-            color, style, lw, ms = category_map[cat_name]
-            ax2.plot(vx, vy, style, color=color, linewidth=lw, markersize=ms, label=cat_name)
-
-    for name, vx, _, vb in scatter_points:
-        matched_cat = next((k for k in category_map if name.split()[0] in k), None)
-        color = category_map[matched_cat][0] if matched_cat else "#333333"
-        marker = category_map[matched_cat][1] if matched_cat else "o"
-        ax2.scatter(vx, vb, color=color, marker=marker, s=80, label=name, zorder=5)
-
-    ax2.set_title("Information Density (Bytes/Token) vs. Vocabulary Size (Higher = Better)", fontweight="bold")
     ax2.set_xlabel("Vocabulary Size (k)")
-    ax2.set_ylabel("Bytes per Token (BPT)")
-    ax2.set_xlim(15, 275)
-    ax2.set_ylim(3.5, 15.5)
+    ax2.set_ylabel("Information Density: Bytes Per Token (BPT)")
+    ax2.set_title("(b) Information Density vs. Vocab Scaling (Higher is Better)")
     ax2.grid(True, linestyle="--", alpha=0.5)
-    ax2.legend(loc="lower right", frameon=True, fontsize=8, ncol=1)
 
+    # Place combined legend outside
+    handles, labels = ax1.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.15), ncol=4, frameon=True)
+
+    fig.suptitle("Nep-Tokenizer v2: Vocabulary Scaling & Multi-Domain Compression Benchmark", fontsize=14, weight="bold")
     plt.tight_layout()
     out_path = output_dir / "fig1_vocab_scaling_fertility.png"
-    plt.savefig(out_path, dpi=300)
+    plt.savefig(out_path, bbox_inches="tight", dpi=300)
     plt.close()
     return out_path
 
 
 def plot_fig2_domain_fertility(data: list[dict], output_dir: Path) -> Path:
-    """Figure 2: Multi-Domain Fertility Comparison (News, Literature, Legal, Colloquial, Technical) across ALL models."""
-    fig, ax = plt.subplots(figsize=(13, 6), dpi=300)
-
-    # Selected representative models for clear grouping
-    models_to_plot = [
-        ("Nep-Tokenizer v2 (64k)", "#1f77b4"),
-        ("Nep-Tokenizer v2 (128k)", "#08519c"),
-        ("Himalaya AI v1 (64k)", "#17becf"),
-        ("Yak v2.0 (64k)", "#2ca02c"),
-        ("Yak v2.0 (128k)", "#006d2c"),
-        ("Arkios (65k)", "#ff7f0e"),
-        ("NepaliBPE (50k)", "#8c564b"),
-        ("NepaliBERT (50k)", "#e377c2"),
-        ("BharatGen Param-1 (256k)", "#bcbd22"),
-        ("Sarvam-1 (68k)", "#e6ab02"),
-        ("LLaMA-3.1 (128k)", "#d62728"),
-        ("Gemma-2 (256k)", "#b15928"),
+    """Figure 2: Multi-Domain Compression across News, Literature, Legal, Colloquial, Technical."""
+    selected_models = [
+        "Nep-Tokenizer v2 (64k)",
+        "Nep-Tokenizer v2 (32k)",
+        "Yak v2.0 (64k)",
+        "Arkios (65k)",
+        "NyayaLM-BPE (64k)",
+        "sidskarki-BPE (64k)",
+        "IndicBERT v2 (250k)",
+        "Supernova V5 (48k)",
+        "Gemma-2 (256k)",
+        "LLaMA-3.1 (128k)",
     ]
 
+    filtered_data = [r for r in data if r["name"] in selected_models]
+    # Sort in selected order
+    filtered_data.sort(key=lambda r: selected_models.index(r["name"]) if r["name"] in selected_models else 99)
+
     domains = ["news", "literature", "legal", "colloquial", "technical"]
-    domain_labels = ["General News", "Literature", "Legal / Formal", "Colloquial Nepali", "Technical / Academic"]
+    domain_labels = ["News", "Literature", "Legal (Acts)", "Colloquial", "Technical / Wiki"]
 
-    x = np.arange(len(domains))
-    n_models = len(models_to_plot)
-    width = 0.85 / n_models
+    model_names = [r["name"] for r in filtered_data]
+    n_models = len(model_names)
+    n_domains = len(domains)
 
-    data_by_name = {r["name"]: r for r in data}
+    matrix = np.zeros((n_models, n_domains))
+    for i, r in enumerate(filtered_data):
+        dom_dict = r.get("domains", {})
+        for j, d in enumerate(domains):
+            matrix[i, j] = dom_dict.get(d, 0.0)
 
-    for idx, (m_name, color) in enumerate(models_to_plot):
-        if m_name in data_by_name:
-            r = data_by_name[m_name]
-            df = r.get("domain_fertilities", {})
-            vals = [df.get(d, 0.0) for d in domains]
-            offset = (idx - n_models / 2 + 0.5) * width
-            ax.bar(x + offset, vals, width, label=m_name, color=color, edgecolor="black", linewidth=0.5, alpha=0.9)
+    fig, ax = plt.subplots(figsize=(14, 6.5), dpi=300)
+    x = np.arange(n_models)
+    width = 0.16
 
-    ax.set_ylabel("Tokens per Word (Fertility) [Lower = Better]", fontweight="bold")
-    ax.set_title("Cross-Domain Compression Efficiency on Nepali Benchmark (All Evaluated Models)", pad=14, fontweight="bold")
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
+    for j in range(n_domains):
+        offset = (j - (n_domains - 1) / 2) * width
+        rects = ax.bar(x + offset, matrix[:, j], width, label=domain_labels[j], color=colors[j], alpha=0.9, edgecolor="black", linewidth=0.5)
+
+    ax.set_ylabel("Domain Fertility (tokens / word)")
+    ax.set_title("Multi-Domain Subword Fertility Across Nepali Domains (Lower is Better)", fontsize=13, weight="bold")
     ax.set_xticks(x)
-    ax.set_xticklabels(domain_labels, fontweight="bold", fontsize=10)
-    ax.legend(frameon=True, loc="upper right", ncol=2, fontsize=8)
+    ax.set_xticklabels(model_names, rotation=30, ha="right", fontsize=9.5)
+    ax.legend(title="Corpus Domain", frameon=True)
     ax.grid(True, axis="y", linestyle="--", alpha=0.5)
-    ax.set_ylim(0.0, 5.2)
 
     plt.tight_layout()
     out_path = output_dir / "fig2_domain_fertility_comparison.png"
-    plt.savefig(out_path, dpi=300)
+    plt.savefig(out_path, bbox_inches="tight", dpi=300)
     plt.close()
     return out_path
 
 
 def plot_fig3_matra_cohesion(data: list[dict], output_dir: Path) -> Path:
-    """Figure 3: Linguistic Integrity & Matra Cohesion Audit across ALL models.
-    
-    Panel A: Severed Matra Anomaly Rate (The Kathmandu Bug audit)
-    Panel B: Devanagari Character Coverage % (Phoneme & Akshara Block completeness)
-    """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6), dpi=300)
+    """Figure 3: Matra Cohesion Rate & Devanagari Single-Token Coverage Comparison."""
+    # Sort models by Matra Severed Error Rate (descending)
+    sorted_data = sorted(data, key=lambda r: r.get("matra_severed_rate", 0.0), reverse=True)
 
-    # Sort models by fertility or quality
-    models = [
-        "Nep-Tokenizer v2 (128k)",
-        "Nep-Tokenizer v2 (64k)",
-        "Himalaya AI v1 (128k)",
-        "Himalaya AI v1 (64k)",
-        "Yak v2.0 (128k)",
-        "Yak v2.0 (64k)",
-        "Arkios (65k)",
-        "NepaliBPE (50k)",
-        "NepaliBERT (50k)",
-        "BERT-Nepali (25k)",
-        "Qwen3-Nepali (166k)",
-        "Sarvam-1 (68k)",
-        "BharatGen Param-1 (256k)",
-        "Gemma-2 (256k)",
-        "LLaMA-3.1 (128k)",
-    ]
+    names = [r["name"] for r in sorted_data]
+    err_rates = [r.get("matra_severed_rate", 0.0) for r in sorted_data]
+    cohesion_rates = [r.get("matra_cohesion_rate", 100.0) for r in sorted_data]
+    deva_cov = [r.get("devanagari_coverage_pct", 100.0) for r in sorted_data]
 
-    data_by_name = {r["name"]: r for r in data}
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6), dpi=300)
 
-    y_labels = []
-    severed_rates = []
-    coverages = []
-    colors_sev = []
-    colors_cov = []
+    y_pos = np.arange(len(names))
+    colors1 = ["#d62728" if e > 5.0 else ("#ff7f0e" if e > 0 else "#2ca02c") for e in err_rates]
 
-    for m in models:
-        if m in data_by_name:
-            r = data_by_name[m]
-            y_labels.append(m)
-            s_rate = r.get("severed_matra_rate", 0.0)
-            cov = r.get("devanagari_coverage_pct", 100.0)
-
-            # Highlight DOAI v2 vs v1 coverage improvement
-            if "Nep-Tokenizer v2" in m:
-                # v2 has 100% Devanagari coverage with zero byte fallback
-                cov = 100.0
-
-            severed_rates.append(s_rate)
-            coverages.append(cov)
-
-            # Colors for severed matras
-            if s_rate == 0.0:
-                colors_sev.append("#2ca02c")
-            elif s_rate < 5.0:
-                colors_sev.append("#1f77b4")
-            elif s_rate < 15.0:
-                colors_sev.append("#ff7f0e")
-            else:
-                colors_sev.append("#d62728")
-
-            # Colors for coverage
-            if cov >= 99.0:
-                colors_cov.append("#2ca02c")
-            elif cov >= 85.0:
-                colors_cov.append("#ff7f0e")
-            else:
-                colors_cov.append("#d62728")
-
-    y_pos = np.arange(len(y_labels))
-
-    # Panel A: Severed Matra Anomaly Rate (Lower = Better)
-    bars1 = ax1.barh(y_pos, severed_rates, color=colors_sev, edgecolor="black", linewidth=0.6, height=0.65)
-    for bar, val in zip(bars1, severed_rates):
-        ax1.text(val + 0.5, bar.get_y() + bar.get_height() / 2, f"{val:.1f}%", va="center", fontweight="bold", fontsize=8.5)
-
+    # Panel A: Severed Matra Anomaly Rate
+    bars1 = ax1.barh(y_pos, err_rates, color=colors1, edgecolor="black", linewidth=0.5)
     ax1.set_yticks(y_pos)
-    ax1.set_yticklabels(y_labels, fontweight="bold", fontsize=9)
+    ax1.set_yticklabels(names, fontsize=9)
     ax1.invert_yaxis()
-    ax1.set_xlabel("Severed Matra Rate (%) [Lower = Better]", fontweight="bold")
-    ax1.set_title("Panel A: Severed Matra Anomaly Rate (Kathmandu Bug Audit)", pad=10, fontweight="bold")
-    ax1.set_xlim(0, 30)
+    ax1.set_xlabel("Severed Matra Error Rate (%) [The Kathmandu Severance Anomaly]")
+    ax1.set_title("(a) Matra Severance Rate (Lower is Better; 0% = Perfect)", fontsize=11, weight="bold")
     ax1.grid(True, axis="x", linestyle="--", alpha=0.5)
 
-    # Panel B: Devanagari Character Coverage % (Higher = Better)
-    bars2 = ax2.barh(y_pos, coverages, color=colors_cov, edgecolor="black", linewidth=0.6, height=0.65)
-    for bar, val in zip(bars2, coverages):
-        ax2.text(val - 12.0, bar.get_y() + bar.get_height() / 2, f"{val:.1f}%", va="center", fontweight="bold", fontsize=8.5, color="white")
+    for bar, val in zip(bars1, err_rates):
+        if val > 0:
+            ax1.text(val + 0.5, bar.get_y() + bar.get_height() / 2, f"{val:.1f}%", va="center", fontsize=8.5)
 
+    # Panel B: Devanagari Character Coverage
+    colors2 = ["#2ca02c" if c == 100.0 else "#ff7f0e" for c in deva_cov]
+    bars2 = ax2.barh(y_pos, deva_cov, color=colors2, edgecolor="black", linewidth=0.5)
     ax2.set_yticks(y_pos)
     ax2.set_yticklabels([])
     ax2.invert_yaxis()
-    ax2.set_xlabel("Devanagari Block Coverage (%) [Higher = Better]", fontweight="bold")
-    ax2.set_title("Panel B: Devanagari Block Native Coverage (Zero Byte-Fallback)", pad=10, fontweight="bold")
-    ax2.set_xlim(60, 105)
+    ax2.set_xlim(80, 103)
+    ax2.set_xlabel("Devanagari Single-Token Character Coverage (%)")
+    ax2.set_title("(b) Devanagari Coverage (100% = All Codepoints Preserved)", fontsize=11, weight="bold")
     ax2.grid(True, axis="x", linestyle="--", alpha=0.5)
 
+    for bar, val in zip(bars2, deva_cov):
+        ax2.text(val + 0.3, bar.get_y() + bar.get_height() / 2, f"{val:.1f}%", va="center", fontsize=8.5)
+
+    fig.suptitle("Nep-Tokenizer v2 Architectural Integrity: Mark Cohesion & Character Completeness", fontsize=13, weight="bold")
     plt.tight_layout()
     out_path = output_dir / "fig3_matra_cohesion_comparison.png"
-    plt.savefig(out_path, dpi=300)
+    plt.savefig(out_path, bbox_inches="tight", dpi=300)
     plt.close()
     return out_path
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate publication evaluation plots")
-    parser.add_argument("--output-dir", default="figures", help="Directory to save figures")
+    parser.add_argument("--output-dir", type=str, default="figures")
     args = parser.parse_args()
 
-    out_dir = Path(args.output_dir)
+    out_dir = REPO_ROOT / args.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     data = load_benchmark_data()
+    print(f"Loaded benchmark data for {len(data)} models.")
 
     f1 = plot_fig1_vocab_scaling(data, out_dir)
-    f2 = plot_fig2_domain_fertility(data, out_dir)
-    f3 = plot_fig3_matra_cohesion(data, out_dir)
+    print(f"Generated Figure 1: {f1}")
 
-    print(f"✓ Generated Figure 1: {f1}")
-    print(f"✓ Generated Figure 2: {f2}")
-    print(f"✓ Generated Figure 3: {f3}")
+    f2 = plot_fig2_domain_fertility(data, out_dir)
+    print(f"Generated Figure 2: {f2}")
+
+    f3 = plot_fig3_matra_cohesion(data, out_dir)
+    print(f"Generated Figure 3: {f3}")
+
+    # Also copy figures into hf_push/figures and brain artifacts
+    hf_fig_dir = REPO_ROOT / "hf_push" / "figures"
+    hf_fig_dir.mkdir(parents=True, exist_ok=True)
+    brain_dir = Path("/Users/paramanada/.gemini/antigravity/brain/5e0fc54e-7ae1-4967-adb8-dd7d91772f0b")
+
+    for p in [f1, f2, f3]:
+        shutil.copy(p, hf_fig_dir / p.name)
+        if brain_dir.exists():
+            shutil.copy(p, brain_dir / p.name)
+    print("Copied all publication figures to hf_push/figures/ and artifact directory.")
 
 
 if __name__ == "__main__":
