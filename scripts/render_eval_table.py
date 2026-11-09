@@ -24,11 +24,19 @@ def normalize_model_name(name: str, pretty: bool) -> str:
 def shorten_model_name(name: str, mode: str) -> str:
     if mode == "full":
         return name
+    if "/" not in name and "__" not in name:
+        return name
     # Prefer HF-style repo/name, otherwise fall back to suffix after "__"
     if "/" in name:
-        return name.split("/")[-1]
+        parts = [p for p in name.split("/") if p]
+        if len(parts) >= 3:
+            return f"{parts[1]}/{parts[-1]}"
+        return parts[-1]
     if "__" in name:
-        return name.split("__")[-1]
+        parts = [p for p in name.split("__") if p]
+        if len(parts) >= 3:
+            return f"{parts[1]}/{parts[-1]}"
+        return parts[-1]
     return name
 
 

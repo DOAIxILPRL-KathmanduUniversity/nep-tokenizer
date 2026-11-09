@@ -68,6 +68,7 @@ def eval_file(sp: spm.SentencePieceProcessor, path: Path) -> Dict[str, Any]:
     total_tokens = 0
     total_words = 0
     total_chars = 0
+    total_bytes = 0
     total_docs = 0
     unk_tokens = 0
     unk_id = sp.unk_id()
@@ -82,6 +83,7 @@ def eval_file(sp: spm.SentencePieceProcessor, path: Path) -> Dict[str, Any]:
                 continue
             total_docs += 1
             total_chars += len(text)
+            total_bytes += len(text.encode("utf-8"))
             words = len(text.split())
             total_words += words
             ids = sp.encode(text, out_type=int)
@@ -92,6 +94,7 @@ def eval_file(sp: spm.SentencePieceProcessor, path: Path) -> Dict[str, Any]:
     fertility = (total_tokens / total_words) if total_words else 0.0
     token_word_ratio = fertility
     tokens_per_char = (total_tokens / total_chars) if total_chars else 0.0
+    bytes_per_token = (total_bytes / total_tokens) if total_tokens else 0.0
     unk_rate = (unk_tokens / total_tokens) if total_tokens else 0.0
 
     return {
@@ -99,9 +102,11 @@ def eval_file(sp: spm.SentencePieceProcessor, path: Path) -> Dict[str, Any]:
         "tokens": total_tokens,
         "words": total_words,
         "chars": total_chars,
+        "bytes": total_bytes,
         "fertility": fertility,
         "token_word_ratio": token_word_ratio,
         "tokens_per_char": tokens_per_char,
+        "bytes_per_token": bytes_per_token,
         "unk_rate": unk_rate,
     }
 

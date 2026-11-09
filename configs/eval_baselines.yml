@@ -1,0 +1,82 @@
+# Comprehensive Evaluation Baselines Configuration
+# Aligned across dedicated Nepali, Indic regional, and frontier LLM tokenizers
+# Evaluated on consistent multi-domain benchmark corpora (News, Literature, Legal, Colloquial, Technical)
+
+baselines:
+  # DOAI x ILPRL (Kathmandu University) Nep-Tokenizer v2
+  - id: nep-tokenizer/hf_push/128k/tokenizer.model
+    name: doai-ku-nep-tokenizer-128k-v2
+    type: sentencepiece
+
+  - id: nep-tokenizer/hf_push/100k/tokenizer.model
+    name: doai-ku-nep-tokenizer-100k-v2
+    type: sentencepiece
+
+  - id: nep-tokenizer/hf_push/64k/tokenizer.model
+    name: doai-ku-nep-tokenizer-64k-v2
+    type: sentencepiece
+
+  # Himalayan AI Previous Baselines (v1 SentencePiece BPE, 0.997 character coverage)
+  - id: himalaya-ai/nepali-tokenizer-bpe-128k-5b
+    name: himalaya-bpe-128k-v1
+    type: sentencepiece
+
+  - id: himalaya-ai/nepali-tokenizer-bpe-100k-5b
+    name: himalaya-bpe-100k-v1
+    type: sentencepiece
+
+  - id: himalaya-ai/nepali-tokenizer-bpe-64k-5b
+    name: himalaya-bpe-64k-v1
+    type: sentencepiece
+
+  # Ampixa Yak Tokenizer (Lossless Byte-Level BPE / Tiktoken)
+  - id: ampixa/yak-tokenizer
+    subfolder: v2.0/128k
+    name: yak-128k
+    type: hf
+
+  - id: ampixa/yak-tokenizer
+    subfolder: v2.0/64k
+    name: yak-64k
+    type: hf
+
+  # Sajal Regmi Arkios (65k Bilingual BPE)
+  - id: sajalregmi4/arkios-1b-base
+    name: arkios-65k
+    type: hf
+
+  # Siddhartha Karki Qwen3-Nepali (166k Extended Devanagari)
+  - id: sidskarki/qwen3-nepali-tokenizer
+    name: qwen3-nepali-166k
+    type: hf
+
+  # Open Subword & Pretrained Nepali Models
+  - id: Aananda-giri/NepaliBPE
+    name: nepalibpe-50k
+    type: hf
+
+  - id: Rajan/NepaliBERT
+    name: nepalibert-50k
+    type: hf
+
+  - id: raygx/BERT_Nepali_Tokenizer
+    name: bert-nepali-25k
+    type: hf
+
+  # Regional Indic Foundations
+  - id: bharatgenai/Param-1-5B
+    name: bharatgen-param1-256k
+    type: hf
+
+  - id: sarvamai/sarvam-1
+    name: sarvam1-68k
+    type: hf
+
+  # Global Multilingual Frontier Baselines
+  - id: unsloth/Meta-Llama-3.1-8B
+    name: llama-3.1-128k
+    type: hf
+
+  - id: unsloth/gemma-2-9b
+    name: gemma-2-256k
+    type: hf

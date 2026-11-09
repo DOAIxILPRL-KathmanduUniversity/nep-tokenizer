@@ -1,0 +1,20 @@
+# Himalayan Tokenizer v2 Configuration
+# Aligned with 64k and 128k evaluation standards
+# High character coverage (0.9999) to ensure complete Devanagari representation without byte-fragmentation
+
+model_type: bpe
+vocab_sizes:
+  - 64000
+  - 128000
+normalization: nfkc
+character_coverage: 0.9999
+byte_fallback: true
+corpus_tag: v2
+user_defined_symbols:
+  - "<pad>"
+  - "<bos>"
+  - "<eos>"
+filters:
+  min_chars: 20
+  min_words: 3
+
