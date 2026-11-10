@@ -78,3 +78,17 @@ def test_digit_grouping(tokenizer):
     pieces_ne = [tokenizer.decode([i]).strip() for i in tokenizer.encode(num_ne)]
     assert all(len(p) <= 3 for p in pieces_ne)
     assert "".join(pieces_ne) == num_ne
+
+
+def test_zwnj_zwj_cohesion(tokenizer):
+    # Test Zero Width Non-Joiner (\u200c) and Zero Width Joiner (\u200d)
+    samples = [
+        "क्\u200ct",   # ZWNJ preventing conjunct ligature
+        "र्\u200dयापिड", # ZWJ eyelash ra
+        "काठमाडौँ",    # candrabindu conjunct
+        "गर्छौँ",
+    ]
+    for text in samples:
+        ids = tokenizer.encode(text, add_special_tokens=False)
+        decoded = tokenizer.decode(ids)
+        assert decoded == text, f"Lossless roundtrip failed for ZWNJ/ZWJ sample '{text}'"

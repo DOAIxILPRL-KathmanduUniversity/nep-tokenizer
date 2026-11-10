@@ -60,7 +60,7 @@ B2U = bytes_to_unicode()
 DIGIT_PATTERN = r"[0-9०-९]{1,3}"
 WORD_PATTERN = (
     r"'s|'t|'re|'ve|'m|'ll|'d"
-    r"| ?[\p{L}\p{M}]+| ?\p{N}+| ?[^\s\p{L}\p{M}\p{N}]+"
+    r"| ?[\p{L}\p{M}\u200c\u200d]+| ?\p{N}+| ?[^\s\p{L}\p{M}\u200c\u200d\p{N}]+"
     r"|\s+(?!\S)|\s+"
 )
 
@@ -127,9 +127,14 @@ def inject_complete_devanagari_block(tok: Tokenizer) -> Tokenizer:
             add_merge(prefix, suffix)
             injected_count += 1
 
+    # 3. Guarantee ZWNJ (U+200C) and ZWJ (U+200D) format characters as atomic single tokens
+    add_merge(B2U[0xE2], B2U[0x80])  # 'âĢ' prefix
+    add_merge(B2U[0xE2] + B2U[0x80], B2U[0x8C])  # ZWNJ U+200C
+    add_merge(B2U[0xE2] + B2U[0x80], B2U[0x8D])  # ZWJ U+200D
+
     tok_json["model"]["vocab"] = vocab
     tok_json["model"]["merges"] = merges
-    print(f"  Guaranteed Devanagari block: injected {injected_count} missing character merges.")
+    print(f"  Guaranteed Devanagari block + ZWNJ/ZWJ: injected {injected_count} missing character merges.")
     return Tokenizer.from_str(json.dumps(tok_json))
 
 

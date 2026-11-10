@@ -24,7 +24,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HF_REPO = "DOAIxILPRL-KU/nep-tokenizer"
-HF_TOKEN = os.getenv("HF_TOKEN") or "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"
+
+HF_TOKEN = os.getenv("HF_TOKEN")
+if not HF_TOKEN:
+    env_file = REPO_ROOT / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            if line.startswith("HF_TOKEN="):
+                HF_TOKEN = line.split("=", 1)[1].strip().strip('"').strip("'")
+                break
+
+if not HF_TOKEN:
+    raise ValueError("HF_TOKEN environment variable is not set. Please set it in .env or export HF_TOKEN.")
 
 
 def main():
